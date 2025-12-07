@@ -25,7 +25,7 @@ def load_dataset(dataset_path: Path) -> pd.DataFrame:
 def prepare_features(df: pd.DataFrame):
     """Bereitet Features für Training vor."""
     # Entferne nicht-feature Spalten
-    exclude_cols = ["match_id", "game_version", "game_mode", "target", "team1_win", "team2_win"]
+    exclude_cols = ["match_id", "game_version", "game_mode", "target", "team1_win", "team2_win", "has_complete_positions"]
     feature_cols = [col for col in df.columns if col not in exclude_cols]
     
     X = df[feature_cols].fillna(-1)

@@ -47,34 +47,58 @@ def extract_features(match_data: Dict) -> Dict:
         for j, ban in enumerate(bans[:5], 1):  # Max 5 Bans
             features[f"team{i}_ban_{j}"] = ban.get("championId", -1)
     
-    # Participants
+    # Participants mit Positionen
     participants = info.get("participants", [])
     
-    # Sortiere nach teamId und dann nach participantId für konsistente Reihenfolge
-    participants_sorted = sorted(participants, key=lambda x: (x.get("teamId", 0), x.get("participantId", 0)))
+    # Position Mapping (Riot API verwendet diese Werte)
+    position_map = {
+        "TOP": "top",
+        "JUNGLE": "jungle",
+        "MIDDLE": "mid",
+        "BOTTOM": "adc",
+        "UTILITY": "support"
+    }
     
-    team1_champions = []
-    team2_champions = []
+    # Organisiere Champions nach Team und Position
+    team1_champions = {}
+    team2_champions = {}
     
-    for participant in participants_sorted:
+    for participant in participants:
         team_id = participant.get("teamId", 100)
         champion_id = participant.get("championId")
+        # Verwende individualPosition (genauer) oder teamPosition als Fallback
+        position = participant.get("individualPosition", participant.get("teamPosition", ""))
+        
+        # Normalisiere Position
+        position_normalized = position_map.get(position, "").lower()
+        
+        if not position_normalized:
+            # Skip wenn keine gültige Position
+            continue
         
         if team_id == 100:
-            team1_champions.append(champion_id)
+            team1_champions[position_normalized] = champion_id
         elif team_id == 200:
-            team2_champions.append(champion_id)
+            team2_champions[position_normalized] = champion_id
     
-    # Team 1 Champions
-    for i, champ_id in enumerate(team1_champions[:5], 1):
-        features[f"team1_champion_{i}"] = champ_id
+    # Team 1 Champions nach Position
+    for pos in ["top", "jungle", "mid", "adc", "support"]:
+        features[f"team1_{pos}"] = team1_champions.get(pos, -1)
     
-    # Team 2 Champions
-    for i, champ_id in enumerate(team2_champions[:5], 1):
-        features[f"team2_champion_{i}"] = champ_id
+    # Team 2 Champions nach Position
+    for pos in ["top", "jungle", "mid", "adc", "support"]:
+        features[f"team2_{pos}"] = team2_champions.get(pos, -1)
     
     # Target Variable: Team 1 gewinnt (1) oder Team 2 gewinnt (0)
     features["target"] = features.get("team1_win", 0)
+    
+    # Validiere, dass alle Positionen vorhanden sind (für beide Teams)
+    required_positions = ["top", "jungle", "mid", "adc", "support"]
+    team1_complete = all(features.get(f"team1_{pos}", -1) != -1 for pos in required_positions)
+    team2_complete = all(features.get(f"team2_{pos}", -1) != -1 for pos in required_positions)
+    
+    # Setze Flag für vollständige Daten
+    features["has_complete_positions"] = team1_complete and team2_complete
     
     return features
 
@@ -90,7 +114,9 @@ def create_dataset(raw_data_dir: Path, output_path: Path, format: str = "parquet
     for match in tqdm(matches, desc="Extrahiere Features"):
         try:
             features = extract_features(match)
-            features_list.append(features)
+            # Nur Matches mit vollständigen Positionen verwenden
+            if features.get("has_complete_positions", False):
+                features_list.append(features)
         except Exception as e:
             print(f"Fehler beim Extrahieren von Features: {e}")
             continue
