@@ -1,0 +1,72 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environment
+venv/
+env/
+ENV/
+.venv
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Jupyter Notebook
+.ipynb_checkpoints
+*.ipynb_checkpoints/
+
+# Environment variables
+.env
+.env.local
+
+# Data files (große Dateien nicht ins Repo)
+data/raw/**/*.json
+data/processed/**/*.csv
+data/processed/**/*.parquet
+data/datasets/**/*.csv
+data/datasets/**/*.parquet
+*.db
+*.sqlite
+
+# Model files (zu groß für Git)
+models/**/*.pkl
+models/**/*.h5
+models/**/*.joblib
+*.model
+
+# Logs
+*.log
+logs/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.temp
+temp/
+tmp/
+
