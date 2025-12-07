@@ -152,7 +152,7 @@ if __name__ == "__main__":
     # Pfade relativ zum Projekt-Root
     project_root = Path(__file__).parent.parent.parent
     raw_data_dir = project_root / "data" / "raw"
-    output_path = project_root / "data" / "datasets" / "lol_matches.parquet"
+    output_path = project_root / "data" / "datasets" / "lol_matches.csv"
     
-    create_dataset(raw_data_dir, output_path, format="parquet")
+    create_dataset(raw_data_dir, output_path, format="csv")
 

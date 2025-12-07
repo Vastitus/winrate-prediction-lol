@@ -41,12 +41,21 @@ ENV/
 .env
 .env.local
 
+# Config file with real API key
+config/config.py
+
 # Data files (große Dateien nicht ins Repo)
 data/raw/**/*.json
 data/processed/**/*.csv
 data/processed/**/*.parquet
-data/datasets/**/*.csv
 data/datasets/**/*.parquet
+
+# Kleine Test-Datasets können hochgeladen werden
+# Ignoriere alle CSV-Dateien in datasets/...
+data/datasets/*.csv
+# ...außer diese spezifischen Test-Datasets
+!data/datasets/10_matches_dataset.csv
+!data/datasets/5k_matches_dataset.csv
 *.db
 *.sqlite
 

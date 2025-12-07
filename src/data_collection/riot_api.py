@@ -7,8 +7,17 @@ import time
 from typing import List, Dict, Optional
 import os
 from dotenv import load_dotenv
+import sys
+from pathlib import Path
 
 load_dotenv()
+
+# Versuche auch config.py zu laden (Fallback)
+try:
+    sys.path.append(str(Path(__file__).parent.parent.parent / "config"))
+    import config
+except ImportError:
+    config = None
 
 # Region Mapping für Riot API
 # V4 API (League, Summoner) verwendet region codes
@@ -85,9 +94,14 @@ class RiotAPI:
     """Wrapper für Riot Games API mit Rate Limiting."""
     
     def __init__(self, api_key: Optional[str] = None, region: str = "euw1"):
-        self.api_key = api_key or os.getenv("RIOT_API_KEY")
+        # Versuche API Key zu finden: Parameter > .env > config.py
+        self.api_key = api_key
         if not self.api_key:
-            raise ValueError("RIOT_API_KEY muss gesetzt sein (in .env oder als Parameter)")
+            self.api_key = os.getenv("RIOT_API_KEY")
+        if not self.api_key and config:
+            self.api_key = getattr(config, "RIOT_API_KEY", None)
+        if not self.api_key:
+            raise ValueError("RIOT_API_KEY muss gesetzt sein (in .env, config/config.py oder als Parameter)")
         
         if region not in REGION_CONFIGS:
             raise ValueError(f"Unbekannte Region: {region}. Verfügbar: {list(REGION_CONFIGS.keys())}")
@@ -103,25 +117,39 @@ class RiotAPI:
         self.last_request_time = 0
         self.min_request_interval = 0.1  # 100ms zwischen Requests (10 req/s für Development Key)
     
-    def _make_request(self, endpoint: str) -> Dict:
-        """Macht API Request mit Rate Limiting."""
+    def _make_request(self, endpoint: str, max_retries: int = 3) -> Dict:
+        """Macht API Request mit Rate Limiting und Retry-Logik."""
         # Rate Limiting
         time_since_last = time.time() - self.last_request_time
         if time_since_last < self.min_request_interval:
             time.sleep(self.min_request_interval - time_since_last)
         
         url = f"{self.base_url}{endpoint}"
-        response = requests.get(url, headers=self.headers)
-        self.last_request_time = time.time()
         
-        if response.status_code == 429:  # Rate Limit exceeded
-            retry_after = int(response.headers.get("Retry-After", 60))
-            print(f"Rate Limit erreicht. Warte {retry_after} Sekunden...")
-            time.sleep(retry_after)
-            return self._make_request(endpoint)
-        
-        response.raise_for_status()
-        return response.json()
+        # Retry-Logik für Netzwerkfehler
+        for attempt in range(max_retries):
+            try:
+                response = requests.get(url, headers=self.headers, timeout=30)
+                self.last_request_time = time.time()
+                
+                if response.status_code == 429:  # Rate Limit exceeded
+                    retry_after = int(response.headers.get("Retry-After", 60))
+                    print(f"Rate Limit erreicht. Warte {retry_after} Sekunden...")
+                    time.sleep(retry_after)
+                    return self._make_request(endpoint, max_retries)
+                
+                response.raise_for_status()
+                return response.json()
+            
+            except (requests.exceptions.ConnectionError, requests.exceptions.Timeout, 
+                    requests.exceptions.RequestException) as e:
+                if attempt < max_retries - 1:
+                    wait_time = (attempt + 1) * 5  # 5, 10, 15 Sekunden
+                    print(f"Netzwerkfehler (Versuch {attempt + 1}/{max_retries}). Warte {wait_time}s...")
+                    time.sleep(wait_time)
+                else:
+                    print(f"Netzwerkfehler nach {max_retries} Versuchen: {e}")
+                    raise
     
     def get_challenger_players(self, queue: str = "RANKED_SOLO_5x5") -> List[Dict]:
         """Holt Challenger Spieler."""
