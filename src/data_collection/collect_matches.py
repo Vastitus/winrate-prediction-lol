@@ -30,10 +30,6 @@ def collect_matches_from_region(api: RiotAPI, target_matches: int, seen_match_id
                                  max_matches_per_region: Optional[int] = None,
                                  lock: Optional[threading.Lock] = None) -> int:
     """Sammelt Matches von einer spezifischen Region."""
-    print(f"\n{'='*60}")
-    print(f"Region: {api.region.upper()}")
-    print(f"{'='*60}")
-    
     # Hole Top-Spieler aus dieser Region
     players = []
     try:
@@ -41,18 +37,15 @@ def collect_matches_from_region(api: RiotAPI, target_matches: int, seen_match_id
         players.extend(api.get_grandmaster_players())
         players.extend(api.get_master_players())
     except Exception as e:
-        print(f"Fehler beim Abrufen von Spielern für {api.region}: {e}")
+        print(f"Fehler {api.region}: {e}")
         return collected_matches_ref[0]
     
-    print(f"Gefunden: {len(players)} Spieler in {api.region}")
-    
     if len(players) == 0:
-        print(f"Keine Spieler in {api.region} gefunden. Überspringe...")
         return collected_matches_ref[0]
     
     # Hole PUUIDs für Spieler (sind bereits in den Player-Daten enthalten)
     player_puuids = []
-    for player in tqdm(players[:max_players_per_region], desc=f"PUUIDs {api.region}"):
+    for player in tqdm(players[:max_players_per_region], desc=f"{api.region.upper()}", leave=False):
         with lock if lock else threading.Lock():
             if collected_matches_ref[0] >= target_matches:
                 break
@@ -60,8 +53,6 @@ def collect_matches_from_region(api: RiotAPI, target_matches: int, seen_match_id
         puuid = player.get("puuid")
         if puuid:
             player_puuids.append(puuid)
-    
-    print(f"Verarbeite {len(player_puuids)} Spieler aus {api.region}...")
     
     # Berechne wie viele Matches noch aus dieser Region gesammelt werden sollen
     matches_from_this_region = 0
@@ -76,7 +67,6 @@ def collect_matches_from_region(api: RiotAPI, target_matches: int, seen_match_id
             if collected_matches_ref[0] >= target_matches:
                 break
             if max_matches_per_region and matches_from_this_region >= max_matches_per_region:
-                print(f"Max Matches für {api.region} erreicht ({max_matches_per_region}). Wechsle zur nächsten Region...")
                 break
         
         try:
@@ -105,8 +95,8 @@ def collect_matches_from_region(api: RiotAPI, target_matches: int, seen_match_id
                     save_match_data(match_data, output_dir)
                     matches_from_this_region += 1
                     
-                    if current_count % 100 == 0:
-                        print(f"\nGesammelt: {current_count}/{target_matches} Matches (Region: {api.region})")
+                    if current_count % 1000 == 0:
+                        print(f"Gesammelt: {current_count}/{target_matches} Matches")
                 
                 except Exception as e:
                     continue
@@ -231,9 +221,6 @@ def collect_matches(api_key: Optional[str] = None, target_matches: int = 200000,
     if regions is None:
         regions = list(REGION_CONFIGS.keys())
     
-    print(f"Sammle Matches aus {len(regions)} Regionen...")
-    print(f"Ziel: {target_matches} Matches")
-    
     # Gruppiere Regionen nach Routing Values für Parallelisierung
     routing_groups = {}
     for region in regions:
@@ -242,20 +229,14 @@ def collect_matches(api_key: Optional[str] = None, target_matches: int = 200000,
             routing_groups[routing] = []
         routing_groups[routing].append(region)
     
-    print(f"Routing Values: {list(routing_groups.keys())}")
-    print(f"Parallelisierung: {'JA' if use_parallel and len(routing_groups) > 1 else 'NEIN'}")
-    
     # Berechne Matches pro Routing Value und pro Region (gleichmäßig verteilt)
     matches_per_routing = max(1, target_matches // len(routing_groups))
     matches_per_region = max(1, target_matches // len(regions))
-    print(f"Ziel: ~{matches_per_routing} Matches pro Routing Value")
-    print(f"Ziel: ~{matches_per_region} Matches pro Region")
-    print()
     
     # Lade bereits existierende Match-IDs (für Resume nach Unterbrechung)
     seen_match_ids = load_existing_match_ids(output_dir)
     if seen_match_ids:
-        print(f"Resume: {len(seen_match_ids)} Matches bereits vorhanden")
+        print(f"Resume: {len(seen_match_ids)} Matches vorhanden")
     
     collected_matches = [len(seen_match_ids)]  # Starte mit bereits vorhandenen Matches
     lock = threading.Lock()
@@ -301,9 +282,7 @@ def collect_matches(api_key: Optional[str] = None, target_matches: int = 200000,
             if collected_matches[0] >= target_matches:
                 break
     
-    print(f"\n{'='*60}")
-    print(f"Fertig! {collected_matches[0]} Matches gesammelt.")
-    print(f"{'='*60}")
+    print(f"\nFertig: {collected_matches[0]} Matches gesammelt")
 
 
 if __name__ == "__main__":

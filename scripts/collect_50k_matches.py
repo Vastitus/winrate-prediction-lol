@@ -1,4 +1,4 @@
-"""Sammelt 600 Matches gleichmäßig verteilt über alle Regionen."""
+"""Sammelt 50.000 Matches gleichmäßig verteilt über alle Regionen."""
 
 import sys
 from pathlib import Path
@@ -9,7 +9,7 @@ sys.path.append(str(project_root / "src" / "data_collection"))
 from collect_matches import collect_matches
 
 if __name__ == "__main__":
-    print("Sammle 600 Matches...")
-    collect_matches(target_matches=600, use_parallel=True)
+    print("Sammle 50.000 Matches...")
+    collect_matches(target_matches=50000, use_parallel=True)
     print("Fertig!")
 
