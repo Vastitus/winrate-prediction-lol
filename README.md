@@ -1,19 +1,17 @@
 # League of Legends Win Rate Prediction
 
-Bachelorarbeit Projekt zur Vorhersage der Gewinnwahrscheinlichkeit in League of Legends Matches.
+Bachelorprojekt. Winrate calculator basierend auf gewählten Champions.
 
 ## Projektübersicht
 
-Dieses Projekt entwickelt Machine Learning Modelle zur Vorhersage der Gewinnwahrscheinlichkeit von League of Legends Matches basierend auf:
-- Champion-Auswahl (Champ Select)
-- Optional: In-Game Parameter nach 10 Minuten (Gold-Differenz, Objectives, etc.)
+Dieses Projekt entwickelt Machine Learning Modelle zur Vorhersage der Gewinnwahrscheinlichkeit von League of Legends Matches basierend auf Champions picked.
 
 ## Technischer Stack
 
 - **API**: Riot Games API
-- **ML-Modelle**: Random Forest, XGBoost, LSTM
+- **ML-Modelle**: Random Forest, XGBoost, Neural Network?
 - **Sprache**: Python
-- **Daten**: ~200k Matches von Top-Spielern
+- **Daten**: ~60k Matches von Spielern in Master+ ELO.
 
 ## Projektstruktur
 
@@ -70,15 +68,6 @@ RIOT_API_KEY=dein_api_key_hier
 ```
 
 **Wichtig**: Die `.env` Datei ist in `.gitignore` und wird nicht ins Repository hochgeladen!
-
-## Nächste Schritte
-
-- [ ] Riot API Key beschaffen
-- [ ] Daten-Sammlung implementieren
-- [ ] Dataset aufbauen (~200k Matches)
-- [ ] Preprocessing Pipeline entwickeln
-- [ ] ML-Modelle implementieren und vergleichen
-- [ ] Web-Interface für Visualisierung (optional)
 
 ## Ressourcen
 
