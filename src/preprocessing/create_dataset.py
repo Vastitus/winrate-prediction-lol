@@ -6,20 +6,25 @@ import json
 import pandas as pd
 from pathlib import Path
 from typing import List, Dict
-from tqdm import tqdm
 
 
 def load_match_files(data_dir: Path) -> List[Dict]:
     """Lädt alle Match-JSON Dateien."""
     match_files = list(data_dir.glob("*.json"))
     matches = []
+    total = len(match_files)
     
-    for file_path in tqdm(match_files, desc="Lade Matches"):
+    print(f"Lade {total} JSON-Dateien...")
+    for i, file_path in enumerate(match_files, 1):
         try:
             with open(file_path, "r", encoding="utf-8") as f:
                 matches.append(json.load(f))
-        except Exception as e:
-            print(f"Fehler beim Laden von {file_path}: {e}")
+            
+            # Status alle 1000 Dateien
+            if i % 1000 == 0 or i == total:
+                print(f"  Geladen: {i}/{total} Dateien ({len(matches)} erfolgreich)")
+        except Exception:
+            continue  # Fehler ignorieren und weitermachen
     
     return matches
 
@@ -105,29 +110,42 @@ def extract_features(match_data: Dict) -> Dict:
 
 def create_dataset(raw_data_dir: Path, output_path: Path, format: str = "parquet"):
     """Erstellt strukturiertes Dataset aus rohen Daten."""
-    print("Lade Match-Daten...")
+    print("=" * 60)
+    print("ERSTELLE DATASET")
+    print("=" * 60)
+    print(f"Input-Verzeichnis: {raw_data_dir}")
+    print(f"Output-Datei: {output_path}")
+    print("=" * 60)
+    print()
+    
     matches = load_match_files(raw_data_dir)
     
-    print(f"Verarbeite {len(matches)} Matches...")
+    print(f"Gefunden: {len(matches)} Matches")
+    print(f"Verarbeite Matches...")
     features_list = []
+    total = len(matches)
     
-    for match in tqdm(matches, desc="Extrahiere Features"):
+    for i, match in enumerate(matches, 1):
         try:
             features = extract_features(match)
             # Nur Matches mit vollständigen Positionen verwenden
             if features.get("has_complete_positions", False):
                 features_list.append(features)
-        except Exception as e:
-            print(f"Fehler beim Extrahieren von Features: {e}")
-            continue
+            
+            # Status alle 1000 Matches
+            if i % 1000 == 0 or i == total:
+                print(f"  Verarbeitet: {i}/{total} Matches ({len(features_list)} mit vollständigen Daten)")
+        except Exception:
+            continue  # Fehler ignorieren und weitermachen
     
+    print()
     print("Erstelle DataFrame...")
     df = pd.DataFrame(features_list)
     
-    print(f"Dataset Shape: {df.shape}")
-    print(f"Spalten: {df.columns.tolist()}")
+    print(f"Dataset Shape: {df.shape[0]} Zeilen, {df.shape[1]} Spalten")
     
     # Speichere Dataset
+    print(f"Speichere Dataset nach {output_path}...")
     output_path.parent.mkdir(parents=True, exist_ok=True)
     
     if format == "parquet":
@@ -137,13 +155,19 @@ def create_dataset(raw_data_dir: Path, output_path: Path, format: str = "parquet
     else:
         raise ValueError(f"Unbekanntes Format: {format}")
     
-    print(f"Dataset gespeichert: {output_path}")
+    print(f"✓ Dataset erfolgreich gespeichert!")
     
     # Zeige Statistiken
-    print("\nDataset Statistiken:")
-    print(df.describe())
-    print(f"\nTarget Verteilung:")
-    print(df["target"].value_counts())
+    print()
+    print("=" * 60)
+    print("DATASET STATISTIKEN")
+    print("=" * 60)
+    print(f"Gesamt Matches: {len(df)}")
+    print(f"Target Verteilung:")
+    target_counts = df["target"].value_counts()
+    print(f"  Team 1 gewinnt: {target_counts.get(1, 0)}")
+    print(f"  Team 2 gewinnt: {target_counts.get(0, 0)}")
+    print("=" * 60)
     
     return df
 

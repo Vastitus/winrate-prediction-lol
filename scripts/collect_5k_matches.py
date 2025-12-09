@@ -1,8 +1,17 @@
-"""Sammelt 5000 Matches gleichmäßig verteilt über alle Regionen."""
+"""
+Sammelt 5000 Matches gleichmäßig verteilt über alle Regionen.
+
+Dieses Script sammelt Match-Daten von Top-Spielern (Challenger, Grandmaster, Master)
+und speichert sie als JSON-Dateien im data/raw Verzeichnis.
+
+Ausführung:
+    python scripts/collect_5k_matches.py
+"""
 
 import sys
 from pathlib import Path
 
+# Füge src/data_collection zum Python-Pfad hinzu
 project_root = Path(__file__).parent.parent
 sys.path.append(str(project_root / "src" / "data_collection"))
 
