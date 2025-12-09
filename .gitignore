@@ -56,6 +56,7 @@ data/datasets/*.csv
 # ...außer diese spezifischen Test-Datasets
 !data/datasets/10_matches_dataset.csv
 !data/datasets/5k_matches_dataset.csv
+!data/datasets/59334_filtered_augmented_dataset.csv
 *.db
 *.sqlite
 
