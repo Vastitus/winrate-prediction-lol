@@ -1,21 +1,10 @@
-"""
-Trainiert ein Neural Network (Multi-Layer Perceptron) für Win-Rate Vorhersage.
-
-Neural Networks lernen komplexe Muster durch mehrere Schichten von Neuronen.
-Jede Schicht transformiert die Eingabe und lernt abstraktere Features.
-
-Vorteile:
-- Kann komplexe, nicht-lineare Muster lernen
-- Gut für Interaktionen zwischen Features (z.B. Champion-Synergien)
-- Flexible Architektur
-"""
+"""Trainiert Neural Network (MLP) für Win-Rate Vorhersage."""
 
 import pandas as pd
-import numpy as np
 from pathlib import Path
-from sklearn.model_selection import train_test_split, GroupShuffleSplit
+from sklearn.model_selection import GroupShuffleSplit
 from sklearn.neural_network import MLPClassifier
-from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
+from sklearn.metrics import accuracy_score, classification_report
 from sklearn.preprocessing import StandardScaler
 import joblib
 
@@ -29,31 +18,29 @@ def load_data():
     """
     project_root = Path(__file__).parent.parent.parent
     
-    # Versuche zuerst augmentiertes Dataset
+    # Standard: Dataset mit Winrates (liefert in deinem Setup aktuell die beste Accuracy)
+    # Optional: Champ-Select Feature-Dataset (Winrates + Matchups + Synergy) ist experimentell.
+    champselect_path = project_root / "data" / "datasets" / "59334_champselect_features.csv"
+    winrates_path = project_root / "data" / "datasets" / "59334_with_winrates.csv"
     augmented_path = project_root / "data" / "datasets" / "59334_filtered_augmented_dataset.csv"
-    normal_path = project_root / "data" / "datasets" / "29668_filtered_dataset.csv"
-    
-    if augmented_path.exists():
-        dataset_path = augmented_path
-        print(f"✓ Nutze augmentiertes Dataset (verdoppelte Datenmenge)")
-    elif normal_path.exists():
-        dataset_path = normal_path
-        print(f"ℹ Nutze normales Dataset (für Augmentation: python src/preprocessing/augment_dataset.py)")
+    if champselect_path.exists():
+        return pd.read_csv(champselect_path)
+    elif winrates_path.exists():
+        return pd.read_csv(winrates_path)
+    elif augmented_path.exists():
+        return pd.read_csv(augmented_path)
     else:
-        raise FileNotFoundError(f"Kein Dataset gefunden! Erwartet: {normal_path}")
-    
-    print(f"Lade Dataset: {dataset_path}")
-    df = pd.read_csv(dataset_path)
-    print(f"Geladen: {len(df)} Matches")
-    
-    return df
+        raise FileNotFoundError("Kein Dataset gefunden!")
 
 
-def prepare_features(df):
+def prepare_features(df, exclude_bans=True):
     """
     Bereitet Features für Training vor.
     
     Neural Networks profitieren von normalisierten Features.
+    
+    Args:
+        exclude_bans: Wenn True, werden Ban-Features ausgeschlossen (nur Champion-Picks)
     
     Returns:
         X: Features
@@ -65,11 +52,19 @@ def prepare_features(df):
         "match_id",
         "game_version",
         "game_mode",
+        "queue_id",           # Immer gleiche ID, nicht relevant
+        "game_duration",      # Data Leakage! Spiellänge ist erst NACH dem Spiel bekannt
         "target",
         "team1_win",
         "team2_win",
         "has_complete_positions"
     ]
+    
+    # Wenn exclude_bans=True, füge alle Ban-Spalten hinzu
+    if exclude_bans:
+        ban_cols = [col for col in df.columns if 'ban' in col]
+        exclude_cols.extend(ban_cols)
+        print(f"[INFO] Bans ausgeschlossen: {len(ban_cols)} Ban-Features entfernt")
     
     feature_cols = [col for col in df.columns if col not in exclude_cols]
     X = df[feature_cols].fillna(-1)
@@ -132,7 +127,7 @@ def normalize_features(X_train, X_val, X_test):
     X_val_scaled = scaler.transform(X_val)
     X_test_scaled = scaler.transform(X_test)
     
-    print("✓ Features normalisiert")
+    print("[OK] Features normalisiert")
     
     return X_train_scaled, X_val_scaled, X_test_scaled, scaler
 
@@ -163,7 +158,7 @@ def train_model(X_train, y_train, X_val, y_val):
     print("Trainiere Modell...")
     print("  (Dies kann einige Minuten dauern)")
     model.fit(X_train, y_train)
-    print("✓ Training abgeschlossen")
+    print("[OK] Training abgeschlossen")
     
     # Evaluation
     train_pred = model.predict(X_train)
@@ -204,26 +199,35 @@ def save_model(model, scaler, feature_cols):
     
     model_path = models_dir / "neural_network.pkl"
     joblib.dump(model, model_path)
-    print(f"\n✓ Modell gespeichert: {model_path}")
+    print(f"\n[OK] Modell gespeichert: {model_path}")
     
     scaler_path = models_dir / "neural_network_scaler.pkl"
     joblib.dump(scaler, scaler_path)
-    print(f"✓ Scaler gespeichert: {scaler_path}")
+    print(f"[OK] Scaler gespeichert: {scaler_path}")
     
     features_path = models_dir / "neural_network_features.txt"
     with open(features_path, "w") as f:
         f.write("\n".join(feature_cols))
-    print(f"✓ Features gespeichert: {features_path}")
+    print(f"[OK] Features gespeichert: {features_path}")
 
 
-def main():
-    """Hauptfunktion: Lädt Daten, trainiert Modell, evaluiert."""
+def main(exclude_bans=True):
+    """
+    Hauptfunktion: Lädt Daten, trainiert Modell, evaluiert.
+    
+    Args:
+        exclude_bans: Wenn True, werden Bans ausgeschlossen (nur Champion-Picks)
+    """
     print("=" * 60)
     print("NEURAL NETWORK TRAINING")
+    if exclude_bans:
+        print("(OHNE BANS - nur Champion-Picks)")
+    else:
+        print("(MIT BANS)")
     print("=" * 60)
     
     df = load_data()
-    X, y, feature_cols, groups = prepare_features(df)
+    X, y, feature_cols, groups = prepare_features(df, exclude_bans=exclude_bans)
     X_train, X_val, X_test, y_train, y_val, y_test = split_data(X, y, groups)
     
     # Normalisiere Features (wichtig für Neural Networks)

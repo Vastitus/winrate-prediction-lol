@@ -1,35 +1,11 @@
-"""
-Data Augmentation für LoL Match-Daten.
-
-Bei Bildern: Rotation, Flipping, etc. um mehr Trainingsdaten zu generieren.
-Bei LoL Matches: Team-Spiegelung (Team 1 ↔ Team 2).
-
-Warum funktioniert das?
-- Ein Match ist symmetrisch: Wenn Team 1 gewinnt, könnte man auch sagen "Team 2 verliert"
-- Durch Spiegeln verdoppeln wir die Datenmenge
-- Das Modell lernt, dass die Teams gleichwertig sind (keine Bias zu Team 1)
-
-Vorteile:
-- Verdoppelt die Datenmenge (z.B. 29k → 58k Matches)
-- Bessere Generalisierung
-- Modell lernt, dass Team-Position irrelevant ist
-"""
+"""Data Augmentation: Team-Spiegelung verdoppelt die Datenmenge."""
 
 import pandas as pd
 from pathlib import Path
 
 
 def augment_match(row):
-    """
-    Spiegelt einen Match (Team 1 ↔ Team 2).
-    
-    Beispiel:
-    Original: Team1=[Champ1, Champ2], Team2=[Champ3, Champ4], Target=1 (Team1 gewinnt)
-    Gespiegelt: Team1=[Champ3, Champ4], Team2=[Champ1, Champ2], Target=0 (Team1 verliert)
-    
-    WICHTIG: Match-ID wird modifiziert, damit Original und gespiegelte Version
-    beim Splitting als Gruppe behandelt werden können (verhindert Data Leakage).
-    """
+    """Spiegelt Match (Team 1 ↔ Team 2) und modifiziert match_id für Group-Splitting."""
     augmented = row.copy()
     
     # Modifiziere Match-ID für gespiegelte Version
@@ -73,73 +49,23 @@ def augment_match(row):
 
 
 def augment_dataset(df):
-    """
-    Erstellt augmentierte Version des Datasets durch Team-Spiegelung.
-    
-    Jeder Match wird gespiegelt, sodass wir doppelt so viele Daten haben.
-    """
-    print("Erstelle augmentierte Matches (Team-Spiegelung)...")
-    
-    augmented_rows = []
-    for idx, row in df.iterrows():
-        # Original Match behalten
-        # (wird schon im DataFrame sein)
-        
-        # Gespiegelten Match hinzufügen
-        augmented_row = augment_match(row)
-        augmented_rows.append(augmented_row)
-    
-    # Erstelle DataFrame aus augmentierten Rows
+    """Erstellt augmentierte Version durch Team-Spiegelung."""
+    augmented_rows = [augment_match(row) for _, row in df.iterrows()]
     augmented_df = pd.DataFrame(augmented_rows)
-    
-    # Kombiniere Original + Augmentiert
-    combined_df = pd.concat([df, augmented_df], ignore_index=True)
-    
-    print(f"Original: {len(df)} Matches")
-    print(f"Augmentiert: {len(augmented_df)} Matches")
-    print(f"Gesamt: {len(combined_df)} Matches")
-    
-    return combined_df
+    return pd.concat([df, augmented_df], ignore_index=True)
 
 
 def main():
-    """Hauptfunktion: Lädt Dataset, augmentiert es, speichert es."""
+    """Lädt Dataset, augmentiert es, speichert es."""
     project_root = Path(__file__).parent.parent.parent
-    
     input_path = project_root / "data" / "datasets" / "29668_filtered_dataset.csv"
     output_path = project_root / "data" / "datasets" / "59334_filtered_augmented_dataset.csv"
     
-    print("=" * 60)
-    print("DATA AUGMENTATION")
-    print("=" * 60)
-    print(f"Input: {input_path}")
-    print(f"Output: {output_path}")
-    print("=" * 60)
-    print()
-    
-    # Lade Dataset
-    print("Lade Dataset...")
     df = pd.read_csv(input_path)
-    print(f"Geladen: {len(df)} Matches")
-    
-    # Augmentiere Dataset
     augmented_df = augment_dataset(df)
-    
-    # Speichere augmentiertes Dataset
-    print(f"\nSpeichere augmentiertes Dataset...")
     output_path.parent.mkdir(parents=True, exist_ok=True)
     augmented_df.to_csv(output_path, index=False)
-    
-    print(f"✓ Augmentiertes Dataset gespeichert: {output_path}")
-    print()
-    print("=" * 60)
-    print("STATISTIKEN")
-    print("=" * 60)
-    print(f"Original Matches: {len(df)}")
-    print(f"Augmentierte Matches: {len(augmented_df)}")
-    print(f"Gesamt Matches: {len(augmented_df)}")
-    print(f"Verdopplung: {len(augmented_df) / len(df):.1f}x")
-    print("=" * 60)
+    print(f"Augmentiert: {len(df)} → {len(augmented_df)} Matches")
 
 
 if __name__ == "__main__":

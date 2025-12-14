@@ -1,11 +1,8 @@
 """
-Erstellt augmentiertes Dataset durch Team-Spiegelung.
+Erstellt augmentiertes Dataset durch Team Spiegelung.
+Also die Gamezahl wird verdoppelt und Sidebiased wird vermieden.
 
-Dieses Script verdoppelt die Datenmenge, indem es jeden Match spiegelt
-(Team 1 ↔ Team 2). Das hilft dem Modell zu lernen, dass Team-Position irrelevant ist.
-
-Ausführung:
-    python scripts/augment_dataset.py
+Ausführung: python scripts/augment_dataset.py
 """
 
 import sys

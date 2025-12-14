@@ -1,23 +1,10 @@
-"""
-Trainiert ein XGBoost Modell für Win-Rate Vorhersage.
-
-XGBoost (Extreme Gradient Boosting) ist ein Gradient Boosting Modell.
-Es baut sequenziell Entscheidungsbäume, wobei jeder neue Baum die Fehler
-des vorherigen korrigiert. Das führt zu sehr genauen Vorhersagen.
-
-Vorteile:
-- Sehr hohe Accuracy
-- Robust gegen Overfitting (durch Regularisierung)
-- Zeigt Feature Importance
-- Funktioniert gut mit strukturierten Daten
-"""
+"""Trainiert XGBoost Modell für Win-Rate Vorhersage."""
 
 import pandas as pd
-import numpy as np
 from pathlib import Path
-from sklearn.model_selection import train_test_split, GroupShuffleSplit
+from sklearn.model_selection import GroupShuffleSplit
 import xgboost as xgb
-from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
+from sklearn.metrics import accuracy_score, classification_report
 import joblib
 
 
@@ -30,51 +17,86 @@ def load_data():
     """
     project_root = Path(__file__).parent.parent.parent
     
-    # Versuche zuerst augmentiertes Dataset
+    # Standard: Dataset mit Winrates (liefert in deinem Setup aktuell die beste Accuracy)
+    # Optional: Champ-Select Feature-Dataset (Winrates + Matchups + Synergy) ist experimentell.
+    champselect_path = project_root / "data" / "datasets" / "59334_champselect_features.csv"
+    winrates_path = project_root / "data" / "datasets" / "59334_with_winrates.csv"
     augmented_path = project_root / "data" / "datasets" / "59334_filtered_augmented_dataset.csv"
-    normal_path = project_root / "data" / "datasets" / "29668_filtered_dataset.csv"
-    
-    if augmented_path.exists():
-        dataset_path = augmented_path
-        print(f"✓ Nutze augmentiertes Dataset (verdoppelte Datenmenge)")
-    elif normal_path.exists():
-        dataset_path = normal_path
-        print(f"ℹ Nutze normales Dataset (für Augmentation: python src/preprocessing/augment_dataset.py)")
+    if champselect_path.exists():
+        return pd.read_csv(champselect_path)
+    elif winrates_path.exists():
+        return pd.read_csv(winrates_path)
+    elif augmented_path.exists():
+        return pd.read_csv(augmented_path)
     else:
-        raise FileNotFoundError(f"Kein Dataset gefunden! Erwartet: {normal_path}")
-    
-    print(f"Lade Dataset: {dataset_path}")
-    df = pd.read_csv(dataset_path)
-    print(f"Geladen: {len(df)} Matches")
-    
-    return df
+        raise FileNotFoundError("Kein Dataset gefunden!")
 
 
-def prepare_features(df):
+def prepare_features(df, exclude_bans=True, use_categorical=True):
     """
     Bereitet Features für Training vor.
     
     Entfernt nicht-feature Spalten (IDs, Metadaten, Target).
     Behält nur die Features, die das Modell lernen soll.
     
+    Args:
+        exclude_bans: Wenn True, werden Ban-Features ausgeschlossen (nur Champion-Picks)
+        use_categorical: Wenn True, werden Champion-IDs als kategorische Features behandelt
+    
     Returns:
         X: Features
         y: Target-Variable
         feature_cols: Liste der Feature-Spalten
         groups: Gruppen für Group-basiertes Splitting (Basis-Match-IDs)
+        categorical_indices: Indizes der kategorischen Features (für XGBoost)
     """
     exclude_cols = [
         "match_id",
         "game_version",
         "game_mode",
+        "queue_id",           # Immer gleiche ID, nicht relevant
+        "game_duration",      # Data Leakage! Spiellänge ist erst NACH dem Spiel bekannt
         "target",
         "team1_win",
         "team2_win",
         "has_complete_positions"
     ]
     
+    # Wenn exclude_bans=True, füge alle Ban-Spalten hinzu
+    if exclude_bans:
+        ban_cols = [col for col in df.columns if 'ban' in col]
+        exclude_cols.extend(ban_cols)
+        print(f"[INFO] Bans ausgeschlossen: {len(ban_cols)} Ban-Features entfernt")
+    
     feature_cols = [col for col in df.columns if col not in exclude_cols]
-    X = df[feature_cols].fillna(-1)
+    X = df[feature_cols].copy()
+    
+    # XGBoost kann echte categorical splits, wenn dtype='category' und enable_categorical=True.
+    categorical_cols = []
+    if use_categorical:
+        # Champion-ID Spalten (NICHT abgeleitete numeric Features)
+        champion_cols = [
+            col
+            for col in feature_cols
+            if any(pos in col for pos in ["top", "jungle", "mid", "adc", "support"])
+            and ("winrate" not in col)
+            and ("matchup" not in col)
+            and ("synergy" not in col)
+            and ("diff" not in col)
+        ]
+        for col in champion_cols:
+            X[col] = X[col].fillna(-1).astype(int).astype("category")
+        categorical_cols = champion_cols
+
+        # Alle numeric feature-spalten sauber casten
+        numeric_cols = [c for c in feature_cols if c not in categorical_cols]
+        for col in numeric_cols:
+            X[col] = X[col].fillna(0.0).astype(float)
+
+        print(f"[INFO] {len(categorical_cols)} Champion-Features als pandas category (enable_categorical)")
+    else:
+        X = X.fillna(-1).astype(float)
+    
     y = df["target"]
     
     # Erstelle Gruppen für Group-basiertes Splitting
@@ -85,7 +107,7 @@ def prepare_features(df):
     print(f"Feature-Spalten: {feature_cols}")
     print(f"Eindeutige Match-Gruppen: {groups.nunique()}")
     
-    return X, y, feature_cols, groups
+    return X, y, feature_cols, groups, categorical_cols
 
 
 def split_data(X, y, groups):
@@ -128,36 +150,50 @@ def split_data(X, y, groups):
     return X_train, X_val, X_test, y_train, y_val, y_test
 
 
-def train_model(X_train, y_train, X_val, y_val):
+def train_model(X_train, y_train, X_val, y_val, categorical_cols=None):
     """
     Trainiert XGBoost Modell.
     
-    XGBoost:
+    XGBoost (Aggressive Regularisierung gegen Overfitting):
     - Baut Bäume sequenziell (jeder korrigiert Fehler des vorherigen)
-    - n_estimators=100: Anzahl Bäume
-    - max_depth=10: Maximale Tiefe
-    - learning_rate=0.1: Wie stark jeder neue Baum die Vorhersage ändert
-    - Regularisierung verhindert Overfitting
+    - n_estimators=300: Mehr Bäume = mehr "Training" (ähnlich wie Epochen)
+    - max_depth=6: Flachere Bäume (reduziert Overfitting stark)
+    - learning_rate=0.05: Niedrigere Lernrate (bessere Generalisierung)
+    - subsample=0.7: Nutze nur 70% der Daten pro Baum (reduziert Overfitting)
+    - colsample_bytree=0.7: Nutze nur 70% der Features pro Baum (reduziert Overfitting)
+    - min_child_weight=5: Mindestens 5 Samples pro Blatt (reduziert Overfitting)
+    - reg_alpha=0.1, reg_lambda=1.0: L1/L2 Regularisierung (reduziert Overfitting)
+    - Ziel: Training und Test Accuracy sollten näher zusammen sein (weniger Overfitting)
     """
     print("\n" + "=" * 60)
     print("TRAINING XGBOOST")
     print("=" * 60)
     
+    # XGBoost mit echten categorical splits (pandas category + enable_categorical=True)
+    # Aggressive Regularisierung gegen Overfitting
     model = xgb.XGBClassifier(
-        n_estimators=100,      # Anzahl Bäume
-        max_depth=10,          # Maximale Tiefe
-        learning_rate=0.1,     # Lernrate
+        n_estimators=300,      # Mehr Bäume = mehr "Training" (ähnlich wie Epochen)
+        max_depth=6,           # Flachere Bäume (reduziert Overfitting stark)
+        learning_rate=0.05,    # Niedrigere Lernrate (bessere Generalisierung)
+        subsample=0.7,         # Nutze nur 70% der Daten pro Baum (reduziert Overfitting)
+        colsample_bytree=0.7, # Nutze nur 70% der Features pro Baum (reduziert Overfitting)
+        min_child_weight=5,    # Mindestens 5 Samples pro Blatt (reduziert Overfitting)
+        reg_alpha=0.1,         # L1 Regularisierung (reduziert Overfitting)
+        reg_lambda=1.0,        # L2 Regularisierung (reduziert Overfitting)
         random_state=42,       # Für Reproduzierbarkeit
-        eval_metric="logloss"  # Metrik für Evaluation
+        eval_metric="logloss",  # Metrik für Evaluation
+        tree_method="hist",     # Schnellere Methode
+        enable_categorical=True
     )
     
     print("Trainiere Modell...")
+    # Wichtig: Für enable_categorical muss DataFrame (mit dtype category) durchgereicht werden.
     model.fit(
         X_train, y_train,
-        eval_set=[(X_val, y_val)],  # Evaluierung während Training
+        eval_set=[(X_val, y_val)],
         verbose=False
     )
-    print("✓ Training abgeschlossen")
+    print("[OK] Training abgeschlossen")
     
     # Evaluation
     train_pred = model.predict(X_train)
@@ -207,25 +243,34 @@ def save_model(model, feature_cols):
     
     model_path = models_dir / "xgboost.pkl"
     joblib.dump(model, model_path)
-    print(f"\n✓ Modell gespeichert: {model_path}")
+    print(f"\n[OK] Modell gespeichert: {model_path}")
     
     features_path = models_dir / "xgboost_features.txt"
     with open(features_path, "w") as f:
         f.write("\n".join(feature_cols))
-    print(f"✓ Features gespeichert: {features_path}")
+    print(f"[OK] Features gespeichert: {features_path}")
 
 
-def main():
-    """Hauptfunktion: Lädt Daten, trainiert Modell, evaluiert."""
+def main(exclude_bans=True):
+    """
+    Hauptfunktion: Lädt Daten, trainiert Modell, evaluiert.
+    
+    Args:
+        exclude_bans: Wenn True, werden Bans ausgeschlossen (nur Champion-Picks)
+    """
     print("=" * 60)
     print("XGBOOST TRAINING")
+    if exclude_bans:
+        print("(OHNE BANS - nur Champion-Picks)")
+    else:
+        print("(MIT BANS)")
     print("=" * 60)
     
     df = load_data()
-    X, y, feature_cols = prepare_features(df)
-    X_train, X_val, X_test, y_train, y_val, y_test = split_data(X, y)
+    X, y, feature_cols, groups, categorical_cols = prepare_features(df, exclude_bans=exclude_bans)
+    X_train, X_val, X_test, y_train, y_val, y_test = split_data(X, y, groups)
     
-    model = train_model(X_train, y_train, X_val, y_val)
+    model = train_model(X_train, y_train, X_val, y_val, categorical_cols)
     test_acc = evaluate_model(model, X_test, y_test)
     save_model(model, feature_cols)
     

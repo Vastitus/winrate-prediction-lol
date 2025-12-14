@@ -6,31 +6,27 @@ Bachelorarbeit Projekt zur Vorhersage der Gewinnwahrscheinlichkeit in League of 
 
 Dieses Projekt entwickelt Machine Learning Modelle zur Vorhersage der Gewinnwahrscheinlichkeit von League of Legends Matches basierend auf:
 - Champion-Auswahl (Champ Select)
-- Optional: In-Game Parameter nach 10 Minuten (Gold-Differenz, Objectives, etc.)
 
 ## Technischer Stack
 
 - **API**: Riot Games API
-- **ML-Modelle**: Random Forest, XGBoost, LSTM
+- **ML-Modelle**: Random Forest, XGBoost, Neural Network
 - **Sprache**: Python
-- **Daten**: ~200k Matches von Top-Spielern
+- **Daten**: ~60k Matches von Top-Spielern (Master+)
 
 ## Projektstruktur
 
 ```
 lol-winrate-prediction/
 ├── data/
-│   ├── raw/              # Rohe API-Daten
-│   ├── processed/        # Verarbeitete Datensätze
-│   └── datasets/         # Finale Datasets (CSV, Parquet, etc.)
+│   ├── raw/              # Rohe API-Daten von Matches 
+│   └── datasets/         # Finale Datasets (CSV)
 ├── src/
 │   ├── data_collection/  # Skripte für API-Abfragen
 │   ├── preprocessing/    # Datenverarbeitung
-│   ├── models/           # ML-Modelle
-│   └── visualization/    # Visualisierungen
-├── notebooks/            # Jupyter Notebooks für Experimente
-├── config/               # Konfigurationsdateien
-├── requirements.txt      # Python Dependencies
+│   └──models/           # ML-Modelle
+├── notebooks/            # Jupyter Notebooks für Graphen, Heatmaps und Tabellen
+├── config/               # Konfigurationsdateien, eigentlich nur für die Riot API
 └── README.md
 ```
 
@@ -43,45 +39,43 @@ git clone <repository-url>
 cd lol-winrate-prediction
 ```
 
-### 2. Virtual Environment erstellen
+### 2. Python Dependencies installieren
 
 ```bash
-python -m venv venv
-
-# Windows
-venv\Scripts\activate
-
-# Linux/Mac
-source venv/bin/activate
+pip install pandas numpy scikit-learn xgboost joblib requests python-dotenv matplotlib seaborn
 ```
 
-### 3. Dependencies installieren
+### 3. Jupyter Notebook installieren (für Visualisierung)
 
 ```bash
-pip install -r requirements.txt
+pip install jupyter
+# oder
+pip install jupyterlab
 ```
 
-### 4. Riot API Key konfigurieren
+### 4. Datasets herunterladen
 
-Erstelle eine `.env` Datei im Root-Verzeichnis:
+Die Datasets (59334 Matches) sind zu groß für GitHub. Die sind im Google Drive. Davor runterladen und dann hier in den Richtigen Ordner ziehen (datasets).
+- `59334_filtered_augmented_dataset.csv`
+- `59334_with_winrates.csv`
+- `59334_champselect_features.csv`
 
+## Verwendung
+
+### Modelle trainieren
+```bash
+python src/models/train_random_forest.py
+python src/models/train_xgboost.py
+python src/models/train_neural_network.py
 ```
-RIOT_API_KEY=dein_api_key_hier
+
+### Modelle vergleichen
+```bash
+python src/models/compare_models.py
 ```
 
-**Wichtig**: Die `.env` Datei ist in `.gitignore` und wird nicht ins Repository hochgeladen!
-
-## Nächste Schritte
-
-- [ ] Riot API Key beschaffen
-- [ ] Daten-Sammlung implementieren
-- [ ] Dataset aufbauen (~200k Matches)
-- [ ] Preprocessing Pipeline entwickeln
-- [ ] ML-Modelle implementieren und vergleichen
-- [ ] Web-Interface für Visualisierung (optional)
-
-## Ressourcen
-
-- [Riot Games API Documentation](https://developer.riotgames.com/)
-- [League of Legends Wiki](https://leagueoflegends.fandom.com/)
+### Visualisierung (Jupyter Notebook)
+```bash
+jupyter notebook notebooks/lol_champselect_eda_and_model_eval.ipynb
+```
 

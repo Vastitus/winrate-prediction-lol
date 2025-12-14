@@ -284,7 +284,7 @@ def get_matches_per_region(output_dir: Path) -> Dict[str, int]:
     return region_counts
 
 
-def collect_matches(api_key: Optional[str] = None, target_matches: int = 200000, 
+def collect_matches(api_key: Optional[str] = None, target_matches: int = 50000, 
                     output_dir: Path = None, regions: Optional[List[str]] = None,
                     use_parallel: bool = True):
     """
@@ -368,5 +368,5 @@ def collect_matches(api_key: Optional[str] = None, target_matches: int = 200000,
 
 
 if __name__ == "__main__":
-    collect_matches(target_matches=200000)
+    collect_matches(target_matches=50000)
 

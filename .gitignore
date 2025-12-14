@@ -50,13 +50,9 @@ data/processed/**/*.csv
 data/processed/**/*.parquet
 data/datasets/**/*.parquet
 
-# Kleine Test-Datasets können hochgeladen werden
-# Ignoriere alle CSV-Dateien in datasets/...
+# Alle großen Datasets werden ignoriert (zu groß für GitHub)
+# Lade sie manuell von Google Drive/Cloud Storage herunter
 data/datasets/*.csv
-# ...außer diese spezifischen Test-Datasets
-!data/datasets/10_matches_dataset.csv
-!data/datasets/5k_matches_dataset.csv
-!data/datasets/59334_filtered_augmented_dataset.csv
 *.db
 *.sqlite
 
