@@ -1,6 +1,6 @@
 # League of Legends Win Rate Prediction
 
-Bachelorarbeit Projekt zur Vorhersage der Gewinnwahrscheinlichkeit in League of Legends Matches.
+Bachelorprojekt. Winrate calculator basierend auf gewählten Champions.
 
 ## Projektübersicht
 
