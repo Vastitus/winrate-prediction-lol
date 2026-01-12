@@ -1,12 +1,21 @@
 """Vergleicht alle trainierten Modelle auf dem gleichen Test-Set."""
 
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+# Ensure project root is on sys.path so this script works when run directly.
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
 import argparse
 from dataclasses import dataclass
 from typing import List, Optional, Tuple
 import pandas as pd
-from pathlib import Path
 from sklearn.model_selection import GroupShuffleSplit
-from sklearn.metrics import accuracy_score
+from sklearn.metrics import accuracy_score, log_loss, roc_auc_score
 import joblib
 
 
@@ -14,6 +23,8 @@ import joblib
 class ModelEval:
     name: str
     accuracy: float
+    auc: Optional[float] = None
+    logloss: Optional[float] = None
     feature_importances: Optional[List[Tuple[str, float]]] = None  # (feature, importance)
 
 
@@ -47,7 +58,7 @@ def load_model(model_name):
         model_name: Name des Modells ("random_forest", "xgboost", "neural_network")
     
     Returns:
-        Modell, Scaler (für Neural Network), feature_cols (Liste der Features)
+        Modell (sklearn Pipeline), feature_cols (Liste der Input-Features)
     """
     project_root = Path(__file__).parent.parent.parent
     models_dir = project_root / "models"
@@ -66,17 +77,24 @@ def load_model(model_name):
         with open(features_path, "r") as f:
             feature_cols = [line.strip() for line in f.readlines() if line.strip()]
     
-    # Für Neural Network: Lade auch Scaler
-    scaler = None
-    if model_name == "neural_network":
-        scaler_path = models_dir / "neural_network_scaler.pkl"
-        if scaler_path.exists():
-            scaler = joblib.load(scaler_path)
-    
-    return model, scaler, feature_cols
+    return model, feature_cols
 
 
-def evaluate_model(model, scaler, X_test, y_test, model_name, expected_features):
+def _safe_auc(y_true, proba_pos):
+    try:
+        return float(roc_auc_score(y_true, proba_pos))
+    except Exception:
+        return None
+
+
+def _safe_logloss(y_true, proba):
+    try:
+        return float(log_loss(y_true, proba, labels=[0, 1]))
+    except Exception:
+        return None
+
+
+def evaluate_model(model, X_test, y_test, expected_features):
     """
     Evaluiert ein Modell auf Test-Set.
     
@@ -95,17 +113,22 @@ def evaluate_model(model, scaler, X_test, y_test, model_name, expected_features)
         if missing_features or extra_features:
             # Verwende nur die erwarteten Features
             X_test = X_test[[col for col in expected_features if col in X_test.columns]]
-    
-    # Für Neural Network: Features normalisieren
-    if scaler is not None:
-        X_test_scaled = scaler.transform(X_test)
-        predictions = model.predict(X_test_scaled)
-    else:
-        predictions = model.predict(X_test)
-    
-    accuracy = accuracy_score(y_test, predictions)
-    
-    return accuracy
+
+    # Modelle sind als sklearn Pipeline gespeichert (inkl. OneHotEncoding etc.)
+    predictions = model.predict(X_test)
+    accuracy = float(accuracy_score(y_test, predictions))
+
+    auc = None
+    ll = None
+    if hasattr(model, "predict_proba"):
+        try:
+            proba = model.predict_proba(X_test)
+            ll = _safe_logloss(y_test, proba)
+            auc = _safe_auc(y_test, proba[:, 1])
+        except Exception:
+            pass
+
+    return accuracy, auc, ll
 
 
 def _ascii_bar(value: float, min_value: float, max_value: float, width: int = 30) -> str:
@@ -223,7 +246,7 @@ def main(argv: Optional[List[str]] = None):
     print("-" * 60)
     
     for model_name in models_to_compare:
-        model, scaler, expected_features = load_model(model_name)
+        model, expected_features = load_model(model_name)
         
         if model is None:
             print(f"[WARN] {model_name.upper()}: Modell nicht gefunden (noch nicht trainiert)")
@@ -235,47 +258,19 @@ def main(argv: Optional[List[str]] = None):
         
         # Bereite Features für dieses spezifische Modell vor
         X_test = df_test[expected_features].copy()
-        
-        # Feature-Vorbereitung (wie in Trainings-Scripts)
-        champion_cols = [
-            col
-            for col in expected_features
-            if any(pos in col for pos in ["top", "jungle", "mid", "adc", "support"])
-            and "winrate" not in col
-            and "matchup" not in col
-            and "synergy" not in col
-            and "diff" not in col
-        ]
-        for col in champion_cols:
-            base = X_test[col].fillna(-1).astype(int)
-            # XGBoost wurde mit enable_categorical=True + pandas category trainiert
-            if model_name == "xgboost":
-                X_test[col] = base.astype("category")
-            else:
-                X_test[col] = base
 
-        # Winrate-Features als numerisch behandeln
-        winrate_cols = [col for col in expected_features if "winrate" in col]
-        for col in winrate_cols:
-            X_test[col] = X_test[col].fillna(0.5).astype(float)
-
-        # Weitere numerische Champselect-Features (Matchups / Synergy / Diffs)
-        extra_numeric_cols = [
-            col
-            for col in expected_features
-            if ("matchup" in col) or ("synergy" in col) or col.endswith("_diff")
-        ]
-        for col in extra_numeric_cols:
-            X_test[col] = X_test[col].fillna(0.0).astype(float)
-        
-        accuracy = evaluate_model(model, scaler, X_test, y_test, model_name, expected_features)
+        accuracy, auc, ll = evaluate_model(model, X_test, y_test, expected_features)
 
         # Feature importance, falls verfügbar
         importances: list[tuple[str, float]] | None = None
-        if hasattr(model, "feature_importances_") and expected_features:
+        if hasattr(model, "named_steps"):
             try:
-                vals = list(getattr(model, "feature_importances_"))
-                importances = sorted(zip(expected_features, vals), key=lambda x: x[1], reverse=True)
+                inner = model.named_steps.get("model")
+                pre = model.named_steps.get("preprocess")
+                if inner is not None and hasattr(inner, "feature_importances_") and pre is not None:
+                    feats = list(map(str, pre.get_feature_names_out()))
+                    vals = list(getattr(inner, "feature_importances_"))
+                    importances = sorted(zip(feats, vals), key=lambda x: x[1], reverse=True)
             except Exception:
                 importances = None
 
@@ -285,8 +280,13 @@ def main(argv: Optional[List[str]] = None):
             "neural_network": "Neural Network",
         }.get(model_name, model_name)
 
-        evals.append(ModelEval(name=pretty_name, accuracy=accuracy, feature_importances=importances))
-        print(f"[OK] {model_name.upper()}: {accuracy*100:.2f}% Accuracy")
+        evals.append(ModelEval(name=pretty_name, accuracy=accuracy, auc=auc, logloss=ll, feature_importances=importances))
+        extra = ""
+        if auc is not None:
+            extra += f" | AUC {auc:.4f}"
+        if ll is not None:
+            extra += f" | LogLoss {ll:.4f}"
+        print(f"[OK] {model_name.upper()}: {accuracy*100:.2f}% Accuracy{extra}")
     
     print("-" * 60)
     print()
@@ -312,14 +312,13 @@ def main(argv: Optional[List[str]] = None):
     
     print("Ranking (beste zuerst):")
     print("-" * 60)
-    for rank, (model_name, accuracy) in enumerate(sorted_results, 1):
-        model_display = {
-            "random_forest": "Random Forest",
-            "xgboost": "XGBoost",
-            "neural_network": "Neural Network"
-        }.get(model_name, model_name)
-        
-        print(f"{rank}. {model_display:20s}: {accuracy*100:6.2f}% Accuracy")
+    for rank, e in enumerate(sorted_evals, 1):
+        extras = ""
+        if e.auc is not None:
+            extras += f" | AUC {e.auc:.4f}"
+        if e.logloss is not None:
+            extras += f" | LogLoss {e.logloss:.4f}"
+        print(f"{rank}. {e.name:20s}: {e.accuracy*100:6.2f}% Accuracy{extras}")
     
     print("-" * 60)
     print()

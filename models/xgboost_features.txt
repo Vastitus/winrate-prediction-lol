@@ -8,9 +8,6 @@ team2_jungle
 team2_mid
 team2_adc
 team2_support
-team1_avg_winrate
-team2_avg_winrate
-winrate_diff
 team1_top_winrate
 team2_top_winrate
 team1_jungle_winrate
@@ -21,3 +18,11 @@ team1_adc_winrate
 team2_adc_winrate
 team1_support_winrate
 team2_support_winrate
+team1_avg_winrate
+team2_avg_winrate
+winrate_diff
+lane_top_matchup_winrate
+lane_jungle_matchup_winrate
+lane_mid_matchup_winrate
+lane_adc_matchup_winrate
+lane_support_matchup_winrate

@@ -1,11 +1,25 @@
 """Trainiert XGBoost Modell für Win-Rate Vorhersage."""
 
-import pandas as pd
+from __future__ import annotations
+
+import sys
 from pathlib import Path
+import argparse
+
+# Ensure project root is on sys.path so `import src...` works when running this file directly.
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+import numpy as np
+import pandas as pd
 from sklearn.model_selection import GroupShuffleSplit
 import xgboost as xgb
-from sklearn.metrics import accuracy_score, classification_report
+from sklearn.metrics import accuracy_score, classification_report, log_loss, roc_auc_score
+from sklearn.pipeline import Pipeline
 import joblib
+
+from src.models.preprocessing import infer_feature_spec, make_preprocessor
 
 
 def load_data():
@@ -32,7 +46,7 @@ def load_data():
         raise FileNotFoundError("Kein Dataset gefunden!")
 
 
-def prepare_features(df, exclude_bans=True, use_categorical=True):
+def prepare_features(df, exclude_bans=True):
     """
     Bereitet Features für Training vor.
     
@@ -41,14 +55,12 @@ def prepare_features(df, exclude_bans=True, use_categorical=True):
     
     Args:
         exclude_bans: Wenn True, werden Ban-Features ausgeschlossen (nur Champion-Picks)
-        use_categorical: Wenn True, werden Champion-IDs als kategorische Features behandelt
     
     Returns:
         X: Features
         y: Target-Variable
         feature_cols: Liste der Feature-Spalten
         groups: Gruppen für Group-basiertes Splitting (Basis-Match-IDs)
-        categorical_indices: Indizes der kategorischen Features (für XGBoost)
     """
     exclude_cols = [
         "match_id",
@@ -67,37 +79,14 @@ def prepare_features(df, exclude_bans=True, use_categorical=True):
         ban_cols = [col for col in df.columns if 'ban' in col]
         exclude_cols.extend(ban_cols)
         print(f"[INFO] Bans ausgeschlossen: {len(ban_cols)} Ban-Features entfernt")
-    
-    feature_cols = [col for col in df.columns if col not in exclude_cols]
+
+    # Synergy-Features sind bewusst ausgeschlossen (zu komplex/zu noisy).
+    exclude_cols.extend([col for col in df.columns if "synergy" in col.lower()])
+
+    spec = infer_feature_spec(df, exclude_cols=exclude_cols)
+    feature_cols = spec.feature_cols
     X = df[feature_cols].copy()
-    
-    # XGBoost kann echte categorical splits, wenn dtype='category' und enable_categorical=True.
-    categorical_cols = []
-    if use_categorical:
-        # Champion-ID Spalten (NICHT abgeleitete numeric Features)
-        champion_cols = [
-            col
-            for col in feature_cols
-            if any(pos in col for pos in ["top", "jungle", "mid", "adc", "support"])
-            and ("winrate" not in col)
-            and ("matchup" not in col)
-            and ("synergy" not in col)
-            and ("diff" not in col)
-        ]
-        for col in champion_cols:
-            X[col] = X[col].fillna(-1).astype(int).astype("category")
-        categorical_cols = champion_cols
-
-        # Alle numeric feature-spalten sauber casten
-        numeric_cols = [c for c in feature_cols if c not in categorical_cols]
-        for col in numeric_cols:
-            X[col] = X[col].fillna(0.0).astype(float)
-
-        print(f"[INFO] {len(categorical_cols)} Champion-Features als pandas category (enable_categorical)")
-    else:
-        X = X.fillna(-1).astype(float)
-    
-    y = df["target"]
+    y = df["target"].astype(int)
     
     # Erstelle Gruppen für Group-basiertes Splitting
     match_ids = df["match_id"].astype(str)
@@ -107,7 +96,7 @@ def prepare_features(df, exclude_bans=True, use_categorical=True):
     print(f"Feature-Spalten: {feature_cols}")
     print(f"Eindeutige Match-Gruppen: {groups.nunique()}")
     
-    return X, y, feature_cols, groups, categorical_cols
+    return X, y, feature_cols, spec, groups
 
 
 def split_data(X, y, groups):
@@ -150,7 +139,39 @@ def split_data(X, y, groups):
     return X_train, X_val, X_test, y_train, y_val, y_test
 
 
-def train_model(X_train, y_train, X_val, y_val, categorical_cols=None):
+def _safe_auc(y_true, proba_pos):
+    try:
+        return float(roc_auc_score(y_true, proba_pos))
+    except Exception:
+        return float("nan")
+
+
+def _safe_logloss(y_true, proba):
+    try:
+        return float(log_loss(y_true, proba, labels=[0, 1]))
+    except Exception:
+        return float("nan")
+
+
+def _eval_metrics(model, X, y):
+    pred = model.predict(X)
+    acc = float(accuracy_score(y, pred))
+    if hasattr(model, "predict_proba"):
+        proba = model.predict_proba(X)
+        ll = _safe_logloss(y, proba)
+        auc = _safe_auc(y, proba[:, 1])
+    else:
+        ll, auc = float("nan"), float("nan")
+    return {"acc": acc, "logloss": ll, "auc": auc}
+
+
+def _build_model(spec, xgb_params: dict):
+    pre = make_preprocessor(spec)
+    xgb_model = xgb.XGBClassifier(**xgb_params)
+    return Pipeline(steps=[("preprocess", pre), ("model", xgb_model)])
+
+
+def train_model(X_train, y_train, X_val, y_val, spec, tune: bool = False, trials: int = 10, seed: int = 42):
     """
     Trainiert XGBoost Modell.
     
@@ -168,55 +189,100 @@ def train_model(X_train, y_train, X_val, y_val, categorical_cols=None):
     print("\n" + "=" * 60)
     print("TRAINING XGBOOST")
     print("=" * 60)
-    
-    # XGBoost mit echten categorical splits (pandas category + enable_categorical=True)
-    # Aggressive Regularisierung gegen Overfitting
-    model = xgb.XGBClassifier(
-        n_estimators=300,      # Mehr Bäume = mehr "Training" (ähnlich wie Epochen)
-        max_depth=6,           # Flachere Bäume (reduziert Overfitting stark)
-        learning_rate=0.05,    # Niedrigere Lernrate (bessere Generalisierung)
-        subsample=0.7,         # Nutze nur 70% der Daten pro Baum (reduziert Overfitting)
-        colsample_bytree=0.7, # Nutze nur 70% der Features pro Baum (reduziert Overfitting)
-        min_child_weight=5,    # Mindestens 5 Samples pro Blatt (reduziert Overfitting)
-        reg_alpha=0.1,         # L1 Regularisierung (reduziert Overfitting)
-        reg_lambda=1.0,        # L2 Regularisierung (reduziert Overfitting)
-        random_state=42,       # Für Reproduzierbarkeit
-        eval_metric="logloss",  # Metrik für Evaluation
-        tree_method="hist",     # Schnellere Methode
-        enable_categorical=True
+
+    base_params = dict(
+        n_estimators=600,
+        max_depth=4,
+        learning_rate=0.05,
+        subsample=0.8,
+        colsample_bytree=0.8,
+        min_child_weight=10,
+        reg_alpha=0.5,
+        reg_lambda=2.0,
+        gamma=0.1,
+        random_state=seed,
+        eval_metric="logloss",
+        tree_method="hist",
+        n_jobs=-1,
     )
-    
-    print("Trainiere Modell...")
-    # Wichtig: Für enable_categorical muss DataFrame (mit dtype category) durchgereicht werden.
-    model.fit(
-        X_train, y_train,
-        eval_set=[(X_val, y_val)],
-        verbose=False
-    )
-    print("[OK] Training abgeschlossen")
-    
-    # Evaluation
-    train_pred = model.predict(X_train)
-    val_pred = model.predict(X_val)
-    
-    train_acc = accuracy_score(y_train, train_pred)
-    val_acc = accuracy_score(y_val, val_pred)
-    
-    print(f"\nErgebnisse:")
-    print(f"  Training Accuracy:   {train_acc:.4f} ({train_acc*100:.2f}%)")
-    print(f"  Validation Accuracy: {val_acc:.4f} ({val_acc*100:.2f}%)")
-    
-    # Feature Importance
-    feature_importance = pd.DataFrame({
-        'feature': X_train.columns,
-        'importance': model.feature_importances_
-    }).sort_values('importance', ascending=False)
-    
-    print(f"\nTop 10 wichtigste Features:")
-    for idx, row in feature_importance.head(10).iterrows():
-        print(f"  {row['feature']:25s}: {row['importance']:.4f}")
-    
-    return model
+
+    if not tune:
+        model = _build_model(spec, base_params)
+        print("Trainiere Modell...")
+        model.fit(X_train, y_train)
+        print("[OK] Training abgeschlossen")
+
+        m_train = _eval_metrics(model, X_train, y_train)
+        m_val = _eval_metrics(model, X_val, y_val)
+        print(f"\nErgebnisse:")
+        print(f"  Training Accuracy:   {m_train['acc']:.4f} ({m_train['acc']*100:.2f}%)")
+        print(f"  Validation Accuracy: {m_val['acc']:.4f} ({m_val['acc']*100:.2f}%)")
+        print(f"  Val AUC:             {m_val['auc']:.4f}")
+        print(f"  Val LogLoss:         {m_val['logloss']:.4f}")
+
+        # Feature Importance (optional): needs transformed feature names
+        try:
+            feats = model.named_steps["preprocess"].get_feature_names_out()
+            imps = model.named_steps["model"].feature_importances_
+            feature_importance = (
+                pd.DataFrame({"feature": feats, "importance": imps})
+                .sort_values("importance", ascending=False)
+                .head(10)
+            )
+            print("\nTop 10 wichtigste Features:")
+            for _, row in feature_importance.iterrows():
+                print(f"  {str(row['feature']):35s}: {float(row['importance']):.4f}")
+        except Exception:
+            pass
+        return model
+
+    rng = np.random.RandomState(seed)
+    space = {
+        "n_estimators": [300, 600, 900, 1200],
+        "max_depth": [3, 4, 5, 6],
+        "learning_rate": [0.03, 0.05, 0.08, 0.1],
+        "subsample": [0.6, 0.7, 0.8, 0.9],
+        "colsample_bytree": [0.6, 0.7, 0.8, 0.9],
+        "min_child_weight": [1, 5, 10, 20],
+        "reg_alpha": [0.0, 0.1, 0.5, 1.0],
+        "reg_lambda": [1.0, 2.0, 5.0],
+        "gamma": [0.0, 0.1, 0.3, 0.5],
+    }
+    keys = list(space.keys())
+    best = None
+    best_params = None
+    best_score = float("inf")
+
+    print(f"[TUNE] XGBoost: {trials} trials (score=val logloss)")
+    try:
+        for i in range(int(trials)):
+            params = dict(base_params)
+            for k in keys:
+                params[k] = space[k][int(rng.randint(0, len(space[k])))]
+            model = _build_model(spec, params)
+            print(f"[TUNE] Trial {i+1:02d}/{trials} train...")
+            model.fit(X_train, y_train)
+            m_val = _eval_metrics(model, X_val, y_val)
+            score = m_val["logloss"]
+            print(f"[TUNE] {i+1:02d}/{trials}  val_acc={m_val['acc']:.4f}  val_auc={m_val['auc']:.4f}  val_logloss={m_val['logloss']:.4f}  params={{'depth':{params['max_depth']}, 'n':{params['n_estimators']}, 'lr':{params['learning_rate']}, 'sub':{params['subsample']}, 'col':{params['colsample_bytree']}, 'mcw':{params['min_child_weight']}, 'a':{params['reg_alpha']}, 'l':{params['reg_lambda']}, 'g':{params['gamma']}}}")
+            if np.isfinite(score) and score < best_score:
+                best_score = score
+                best = model
+                best_params = params
+    except KeyboardInterrupt:
+        print("\n[TUNE] Abgebrochen (Ctrl+C). Verwende bestes Modell 'so far'...\n")
+
+    if best is None:
+        print("[TUNE] Fallback auf Basis-Parameter (kein gültiger LogLoss).")
+        best = _build_model(spec, base_params)
+        best.fit(X_train, y_train)
+        return best
+
+    m_train = _eval_metrics(best, X_train, y_train)
+    m_val = _eval_metrics(best, X_val, y_val)
+    print("[TUNE] Best params:", best_params)
+    print(f"[TUNE] Best  Train acc={m_train['acc']:.4f} | Val acc={m_val['acc']:.4f} | Val AUC={m_val['auc']:.4f} | Val LogLoss={m_val['logloss']:.4f}")
+    return best
 
 
 def evaluate_model(model, X_test, y_test):
@@ -231,6 +297,11 @@ def evaluate_model(model, X_test, y_test):
     print(f"Test Accuracy: {test_acc:.4f} ({test_acc*100:.2f}%)")
     print("\nClassification Report:")
     print(classification_report(y_test, test_pred))
+
+    if hasattr(model, "predict_proba"):
+        proba = model.predict_proba(X_test)
+        print(f"Test AUC: {_safe_auc(y_test, proba[:, 1]):.4f}")
+        print(f"Test LogLoss: {_safe_logloss(y_test, proba):.4f}")
     
     return test_acc
 
@@ -250,8 +321,14 @@ def save_model(model, feature_cols):
         f.write("\n".join(feature_cols))
     print(f"[OK] Features gespeichert: {features_path}")
 
+    try:
+        feat_out = model.named_steps["preprocess"].get_feature_names_out()
+        (models_dir / "xgboost_features_transformed.txt").write_text("\n".join(map(str, feat_out)))
+    except Exception:
+        pass
 
-def main(exclude_bans=True):
+
+def main(exclude_bans=True, tune: bool = False, trials: int = 20):
     """
     Hauptfunktion: Lädt Daten, trainiert Modell, evaluiert.
     
@@ -267,10 +344,10 @@ def main(exclude_bans=True):
     print("=" * 60)
     
     df = load_data()
-    X, y, feature_cols, groups, categorical_cols = prepare_features(df, exclude_bans=exclude_bans)
+    X, y, feature_cols, spec, groups = prepare_features(df, exclude_bans=exclude_bans)
     X_train, X_val, X_test, y_train, y_val, y_test = split_data(X, y, groups)
     
-    model = train_model(X_train, y_train, X_val, y_val, categorical_cols)
+    model = train_model(X_train, y_train, X_val, y_val, spec, tune=tune, trials=trials)
     test_acc = evaluate_model(model, X_test, y_test)
     save_model(model, feature_cols)
     
@@ -283,4 +360,17 @@ def main(exclude_bans=True):
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--no-bans", "-n", action="store_true", help="Trainiere ohne Bans (Default)")
+    parser.add_argument("--with-bans", action="store_true", help="Trainiere mit Bans")
+    parser.add_argument("--tune", action="store_true", help="Kleine Hyperparameter-Suche (auf Validation Split)")
+    parser.add_argument("--trials", type=int, default=10, help="Anzahl Trials für --tune (Default: 10)")
+    args = parser.parse_args()
+
+    exclude_bans = True
+    if args.with_bans:
+        exclude_bans = False
+    elif args.no_bans:
+        exclude_bans = True
+
+    main(exclude_bans=exclude_bans, tune=args.tune, trials=args.trials)
