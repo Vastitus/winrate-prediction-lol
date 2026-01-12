@@ -41,17 +41,32 @@ cd lol-winrate-prediction
 
 ### 2. Python Dependencies installieren
 
-```bash
-pip install pandas numpy scikit-learn xgboost joblib requests python-dotenv matplotlib seaborn
-```
-
-### 3. Jupyter Notebook installieren (für Visualisierung)
+**Alle Dependencies auf einmal installieren:**
 
 ```bash
-pip install jupyter
-# oder
-pip install jupyterlab
+pip install pandas numpy scikit-learn xgboost joblib requests python-dotenv matplotlib seaborn notebook ipykernel
 ```
+
+**Oder einzeln installieren:**
+
+**Machine Learning:**
+- `pandas` - Datenverarbeitung
+- `numpy` - Numerische Operationen
+- `scikit-learn` - ML-Modelle (Random Forest, Neural Network)
+- `xgboost` - XGBoost Modell
+- `joblib` - Modell-Speicherung
+
+**API & Daten-Sammlung:**
+- `requests` - HTTP Requests für Riot API
+- `python-dotenv` - Umgebungsvariablen (.env Datei)
+
+**Visualisierung:**
+- `matplotlib` - Plots
+- `seaborn` - Statistische Visualisierungen
+
+**Jupyter Notebook:**
+- `notebook` - Jupyter Notebook
+- `ipykernel` - Python Kernel für Jupyter
 
 ### 4. Datasets herunterladen
 
