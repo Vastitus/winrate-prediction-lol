@@ -19,15 +19,16 @@ Dieses Projekt entwickelt Machine Learning Modelle zur Vorhersage der Gewinnwahr
 ```
 lol-winrate-prediction/
 ├── data/
-│   ├── raw/              # Rohe API-Daten von Matches 
-│   └── datasets/         # Finale Datasets (CSV)
+│   ├── raw/              # Rohe API-Daten (JSON)
+│   └── datasets/         # Verarbeitete Datasets (CSV)
 ├── src/
-│   ├── data_collection/  # Skripte für API-Abfragen
-│   ├── preprocessing/    # Datenverarbeitung
-│   └──models/           # ML-Modelle
-├── notebooks/            # Jupyter Notebooks für Graphen, Heatmaps und Tabellen
-├── config/               # Konfigurationsdateien, eigentlich nur für die Riot API
-└── README.md
+│   ├── data_collection/  # API-Wrapper und Match-Sammlung
+│   ├── preprocessing/    # Feature Engineering (Winrates, Augmentation)
+│   └── models/           # ML-Modelle und Preprocessing
+├── scripts/              # Ausführbare Skripte (Daten sammeln, Sanity Checks)
+├── models/               # Gespeicherte Modelle (.pkl) und Features
+├── notebooks/            # Jupyter Notebooks für Visualisierung
+└── config/               # Riot API Konfiguration
 ```
 
 ## Setup
@@ -87,6 +88,11 @@ python src/models/train_neural_network.py
 ### Modelle vergleichen
 ```bash
 python src/models/compare_models.py
+```
+
+### Sanity Check (Pipeline-Validierung)
+```bash
+python scripts/sanity_check_synthetic_labels.py
 ```
 
 ### Visualisierung (Jupyter Notebook)
