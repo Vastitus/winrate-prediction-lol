@@ -1,5 +1,6 @@
 """Data Augmentation: Team-Spiegelung verdoppelt die Datenmenge."""
 
+import argparse
 import pandas as pd
 from pathlib import Path
 
@@ -55,17 +56,36 @@ def augment_dataset(df):
     return pd.concat([df, augmented_df], ignore_index=True)
 
 
+def parse_args():
+    """CLI-Argumente für flexible Input/Output-Dateinamen."""
+    project_root = Path(__file__).parent.parent.parent
+    parser = argparse.ArgumentParser(description="Verdoppelt Daten durch Team-Spiegelung.")
+    parser.add_argument(
+        "--input",
+        default=str(project_root / "data" / "datasets" / "29668_filtered_dataset.csv"),
+        help="Pfad zur Eingabedatei (CSV).",
+    )
+    parser.add_argument(
+        "--output",
+        default=str(project_root / "data" / "datasets" / "59334_filtered_augmented_dataset.csv"),
+        help="Pfad zur Ausgabedatei (CSV).",
+    )
+    return parser.parse_args()
+
+
 def main():
     """Lädt Dataset, augmentiert es, speichert es."""
+    args = parse_args()
     project_root = Path(__file__).parent.parent.parent
-    input_path = project_root / "data" / "datasets" / "29668_filtered_dataset.csv"
-    output_path = project_root / "data" / "datasets" / "59334_filtered_augmented_dataset.csv"
-    
+    input_path = Path(args.input)
+    output_path = Path(args.output)
+
     df = pd.read_csv(input_path)
     augmented_df = augment_dataset(df)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     augmented_df.to_csv(output_path, index=False)
-    print(f"Augmentiert: {len(df)} → {len(augmented_df)} Matches")
+    print(f"Augmentiert: {len(df)} -> {len(augmented_df)} Matches")
+    print(f"Gespeichert: {output_path}")
 
 
 if __name__ == "__main__":

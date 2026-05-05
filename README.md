@@ -70,10 +70,33 @@ pip install pandas numpy scikit-learn xgboost joblib requests python-dotenv matp
 
 ### 4. Datasets herunterladen
 
-Die Datasets (59334 Matches) sind zu groß für GitHub. Die sind im Google Drive. Davor runterladen und dann hier in den Richtigen Ordner ziehen (datasets).
-- `59334_filtered_augmented_dataset.csv`
-- `59334_with_winrates.csv`
-- `59334_champselect_features.csv`
+Die Datasets sind zu groß für GitHub. Du kannst sie jetzt direkt per Script laden:
+
+```bash
+# Direkte URL
+python scripts/download_dataset.py --url "<DOWNLOAD_URL>" --output data/datasets/new_matches_dataset.csv
+
+# Oder Google Drive File-ID
+python scripts/download_dataset.py --gdrive-id "<FILE_ID>" --output data/datasets/new_matches_dataset.csv
+```
+
+### 5. Preprocessing-Pipeline mit neuem Dataset
+
+Alle Verarbeitungsskripte unterstützen jetzt flexible Input/Output-Pfade:
+
+```bash
+# 1) Filtern
+python scripts/filter_dataset.py --input data/datasets/new_matches_dataset.csv --output data/datasets/new_filtered_dataset.csv --min-matches 50
+
+# 2) Augmentieren
+python src/preprocessing/augment_dataset.py --input data/datasets/new_filtered_dataset.csv --output data/datasets/new_filtered_augmented_dataset.csv
+
+# 3) Winrate-Features
+python src/preprocessing/add_champion_winrates.py --input data/datasets/new_filtered_augmented_dataset.csv --output data/datasets/new_with_winrates.csv
+
+# 4) Champselect-Features
+python src/preprocessing/add_champselect_features.py --input data/datasets/new_filtered_augmented_dataset.csv --output data/datasets/new_champselect_features.csv
+```
 
 ## Verwendung
 
@@ -94,3 +117,22 @@ python src/models/compare_models.py
 jupyter notebook notebooks/lol_champselect_eda_and_model_eval.ipynb
 ```
 
+## V2 - BA-Experimente
+
+Der neue Stand fuer die Bachelorarbeit liegt unter `v2/`. Legacy-Code in `src/` und `scripts/` bleibt zur Referenz unveraendert (siehe `legacy/README.md`).
+
+### Dataset bauen (High-Elo, Queue 420, mit Timeline-Diffs @ Min 7 / Min 15)
+
+```bash
+python v2/scripts/build_match_dataset_v2.py --target-matches 5000 --output data/datasets/v2_match_dataset_5000.csv
+```
+
+Failsafes: Checkpoints (CSV-Append), Resume, Cooldown bei leeren Regionen, no-progress timeout.
+
+### Experimente (Pregame vs. Min 7 vs. Min 15)
+
+```bash
+jupyter notebook v2/notebooks/model_experiments.ipynb
+```
+
+Trainiert pro Condition Random Forest, XGBoost und MLP und schreibt die Plots nach `v2/notebooks/charts/`.

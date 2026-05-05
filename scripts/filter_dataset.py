@@ -1,5 +1,6 @@
-"""Filtert Dataset: Entfernt Matches mit Champions, die <50x auf ihrer Position gespielt wurden."""
+"""Filtert Dataset: Entfernt Matches mit Champions, die <N-mal auf ihrer Position gespielt wurden."""
 
+import argparse
 import pandas as pd
 from pathlib import Path
 
@@ -51,15 +52,41 @@ def filter_dataset(df: pd.DataFrame, min_matches: int = 50):
     return df.loc[valid_matches].copy()
 
 
+def parse_args():
+    """CLI-Argumente für flexible Dataset-Dateinamen."""
+    parser = argparse.ArgumentParser(
+        description="Filtert Matches basierend auf Mindestanzahl pro Champion-Position."
+    )
+    parser.add_argument(
+        "--input",
+        default=str(project_root / "data" / "datasets" / "35k_matches_dataset.csv"),
+        help="Pfad zur Eingabedatei (CSV).",
+    )
+    parser.add_argument(
+        "--output",
+        default=str(project_root / "data" / "datasets" / "29668_filtered_dataset.csv"),
+        help="Pfad zur Ausgabedatei (CSV).",
+    )
+    parser.add_argument(
+        "--min-matches",
+        type=int,
+        default=50,
+        help="Mindestanzahl Spiele pro Champion-Position.",
+    )
+    return parser.parse_args()
+
+
 def main():
-    input_path = project_root / "data" / "datasets" / "35k_matches_dataset.csv"
-    output_path = project_root / "data" / "datasets" / "29668_filtered_dataset.csv"
-    
+    args = parse_args()
+    input_path = Path(args.input)
+    output_path = Path(args.output)
+
     df = pd.read_csv(input_path)
-    filtered_df = filter_dataset(df, min_matches=50)
+    filtered_df = filter_dataset(df, min_matches=args.min_matches)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     filtered_df.to_csv(output_path, index=False)
-    print(f"Gefiltert: {len(df)} → {len(filtered_df)} Matches")
+    print(f"Gefiltert: {len(df)} -> {len(filtered_df)} Matches")
+    print(f"Gespeichert: {output_path}")
 
 
 if __name__ == "__main__":

@@ -16,6 +16,7 @@ WICHTIG (gegen Data Leakage):
 
 from __future__ import annotations
 
+import argparse
 from pathlib import Path
 from itertools import combinations
 from typing import Dict, Tuple
@@ -208,9 +209,26 @@ def add_features(
     return df
 
 
-def main() -> None:
+def parse_args():
+    """CLI-Argumente für flexible Input/Output-Dateinamen."""
     project_root = Path(__file__).parent.parent.parent
-    src_path = project_root / "data" / "datasets" / "59334_filtered_augmented_dataset.csv"
+    parser = argparse.ArgumentParser(description="Erstellt erweitertes Champ-Select Feature-Dataset.")
+    parser.add_argument(
+        "--input",
+        default=str(project_root / "data" / "datasets" / "59334_filtered_augmented_dataset.csv"),
+        help="Pfad zur Eingabedatei (CSV).",
+    )
+    parser.add_argument(
+        "--output",
+        default=str(project_root / "data" / "datasets" / "59334_champselect_features.csv"),
+        help="Pfad zur Ausgabedatei (CSV).",
+    )
+    return parser.parse_args()
+
+
+def main() -> None:
+    args = parse_args()
+    src_path = Path(args.input)
     if not src_path.exists():
         raise FileNotFoundError(f"Dataset nicht gefunden: {src_path}")
 
@@ -228,7 +246,8 @@ def main() -> None:
 
     df_out = add_features(df, champ_wr, matchup_wr, synergy_wr)
 
-    out_path = project_root / "data" / "datasets" / "59334_champselect_features.csv"
+    out_path = Path(args.output)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
     df_out.to_csv(out_path, index=False)
 
     added_cols = [c for c in df_out.columns if c.endswith("_winrate") or c.endswith("_diff") or c.startswith("lane_") or c.endswith("_synergy")]
