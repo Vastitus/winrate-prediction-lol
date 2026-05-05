@@ -2,7 +2,7 @@
 
 Dieser Ordner markiert den alten Projektstand als Referenz.
 Die eigentlichen Legacy-Dateien bleiben an ihren aktuellen Pfaden und sollen
-ab jetzt nicht mehr veraendert werden.
+ab jetzt nicht mehr verändert werden.
 
 ## Legacy Python-Dateien (nicht mehr bearbeiten)
 
@@ -27,7 +27,7 @@ ab jetzt nicht mehr veraendert werden.
 
 - `notebooks/lol_champselect_eda_and_model_eval.ipynb`
 
-## Ab jetzt fuer neue Entwicklung
+## Ab jetzt für neue Entwicklung
 
 Nutze nur:
 

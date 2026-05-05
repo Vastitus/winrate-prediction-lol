@@ -6,7 +6,6 @@ Ziel: Outcome nur aus Champ-Select besser vorhersagen.
 Features (zusätzlich zu Picks):
 - Champion Winrates (aus Trainings-Split berechnet)
 - Lane-Matchup Winrates (z.B. team1_top vs team2_top)
-- Team-Synergy (pairwise Winrate von Champion-Paaren im selben Team)
 
 WICHTIG (gegen Data Leakage):
 - Statistiken werden NUR aus dem TRAINING-SET berechnet.
@@ -18,7 +17,6 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
-from itertools import combinations
 from typing import Dict, Tuple
 
 import numpy as np
@@ -123,45 +121,10 @@ def compute_lane_matchup_winrates(df_train: pd.DataFrame) -> Dict[Tuple[str, int
     return out
 
 
-def compute_team_synergy_winrates(df_train: pd.DataFrame) -> Dict[Tuple[int, int], float]:
-    """
-    Pairwise Synergy: P(team_win | pair in team).
-    Key: (minChamp, maxChamp) (unordered)
-    """
-    wins: Dict[Tuple[int, int], int] = {}
-    total: Dict[Tuple[int, int], int] = {}
-
-    y = df_train["target"].astype(int).values
-
-    # Team1 pairs => win if y==1
-    t1 = df_train[[f"team1_{p}" for p in POSITIONS]].fillna(-1).astype(int).values
-    for champs, win in zip(t1, y):
-        champs = [int(c) for c in champs if int(c) != -1]
-        for c1, c2 in combinations(sorted(champs), 2):
-            key = (c1, c2)
-            total[key] = total.get(key, 0) + 1
-            wins[key] = wins.get(key, 0) + int(win == 1)
-
-    # Team2 pairs => win if y==0
-    t2 = df_train[[f"team2_{p}" for p in POSITIONS]].fillna(-1).astype(int).values
-    for champs, win in zip(t2, y):
-        champs = [int(c) for c in champs if int(c) != -1]
-        for c1, c2 in combinations(sorted(champs), 2):
-            key = (c1, c2)
-            total[key] = total.get(key, 0) + 1
-            wins[key] = wins.get(key, 0) + int(win == 0)
-
-    out: Dict[Tuple[int, int], float] = {}
-    for key, t in total.items():
-        out[key] = _laplace(wins.get(key, 0), t, alpha=10.0)
-    return out
-
-
 def add_features(
     df: pd.DataFrame,
     champ_wr: Dict[int, float],
     matchup_wr: Dict[Tuple[str, int, int], float],
-    synergy_wr: Dict[Tuple[int, int], float],
 ) -> pd.DataFrame:
     df = df.copy()
 
@@ -191,20 +154,6 @@ def add_features(
             else:
                 vals.append(matchup_wr.get((pos, int(champ_a), int(champ_b)), 0.5))
         df[f"lane_{pos}_matchup_winrate"] = vals
-
-    # Team synergy (avg of 10 pairs)
-    def team_synergy(row, prefix: str) -> float:
-        champs = [int(row[f"{prefix}_{p}"]) for p in POSITIONS if int(row[f"{prefix}_{p}"]) != -1]
-        if len(champs) < 2:
-            return 0.5
-        scores = []
-        for c1, c2 in combinations(sorted(champs), 2):
-            scores.append(synergy_wr.get((c1, c2), 0.5))
-        return float(np.mean(scores)) if scores else 0.5
-
-    df["team1_synergy"] = df.apply(lambda r: team_synergy(r, "team1"), axis=1)
-    df["team2_synergy"] = df.apply(lambda r: team_synergy(r, "team2"), axis=1)
-    df["synergy_diff"] = df["team1_synergy"] - df["team2_synergy"]
 
     return df
 
@@ -242,15 +191,14 @@ def main() -> None:
 
     champ_wr = compute_champion_winrates(df_train)
     matchup_wr = compute_lane_matchup_winrates(df_train)
-    synergy_wr = compute_team_synergy_winrates(df_train)
 
-    df_out = add_features(df, champ_wr, matchup_wr, synergy_wr)
+    df_out = add_features(df, champ_wr, matchup_wr)
 
     out_path = Path(args.output)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     df_out.to_csv(out_path, index=False)
 
-    added_cols = [c for c in df_out.columns if c.endswith("_winrate") or c.endswith("_diff") or c.startswith("lane_") or c.endswith("_synergy")]
+    added_cols = [c for c in df_out.columns if c.endswith("_winrate") or c.endswith("_diff") or c.startswith("lane_")]
     print(f"[OK] Gespeichert: {out_path}")
     print(f"[OK] Neue/erweiterte Feature-Spalten (count): {len(added_cols)}")
 

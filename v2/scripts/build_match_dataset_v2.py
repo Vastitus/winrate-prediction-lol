@@ -41,7 +41,7 @@ def parse_args():
     p.add_argument(
         "--output",
         default=str(PROJECT_ROOT / "data" / "datasets" / "v2_match_dataset_10000.csv"),
-        help="Ausgabe-CSV (wird bei Checkpoint ueberschrieben).",
+        help="Ausgabe-CSV (wird bei Checkpoint überschrieben).",
     )
     p.add_argument("--regions", default="", help="Komma-getrennte Regionen. Leer = alle REGION_CONFIGS.")
     p.add_argument("--max-players-per-region", type=int, default=2000, help="Max. Spieler pro Region (C/GM/M).")
@@ -70,7 +70,7 @@ def parse_args():
         "--cooldown-rounds",
         type=int,
         default=80,
-        help="Region wird fuer so viele Worker-Runden uebersprungen (dann erneuter Versuch).",
+        help="Region wird für so viele Worker-Runden übersprungen (dann erneuter Versuch).",
     )
     p.add_argument(
         "--no-progress-timeout-seconds",

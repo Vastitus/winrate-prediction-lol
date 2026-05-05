@@ -91,7 +91,7 @@ def main():
     df = pd.read_csv(dataset_path)
 
     # Group-basierter Split, damit Originale und gespiegelte Matches zusammenbleiben.
-    # Stats werden ausschliesslich aus den Trainingsdaten berechnet.
+    # Stats werden ausschließlich aus den Trainingsdaten berechnet.
     match_ids = df["match_id"].astype(str)
     groups = match_ids.str.replace('_mirrored', '', regex=False)
     gss = GroupShuffleSplit(n_splits=1, test_size=0.3, random_state=42)

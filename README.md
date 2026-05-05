@@ -19,15 +19,16 @@ Dieses Projekt entwickelt Machine Learning Modelle zur Vorhersage der Gewinnwahr
 ```
 lol-winrate-prediction/
 ├── data/
-│   ├── raw/              # Rohe API-Daten von Matches 
-│   └── datasets/         # Finale Datasets (CSV)
+│   ├── raw/              # Rohe API-Daten (JSON)
+│   └── datasets/         # Verarbeitete Datasets (CSV)
 ├── src/
-│   ├── data_collection/  # Skripte für API-Abfragen
-│   ├── preprocessing/    # Datenverarbeitung
-│   └──models/           # ML-Modelle
-├── notebooks/            # Jupyter Notebooks für Graphen, Heatmaps und Tabellen
-├── config/               # Konfigurationsdateien, eigentlich nur für die Riot API
-└── README.md
+│   ├── data_collection/  # API-Wrapper und Match-Sammlung
+│   ├── preprocessing/    # Feature Engineering (Winrates, Augmentation)
+│   └── models/           # ML-Modelle und Preprocessing
+├── scripts/              # Ausführbare Skripte (Daten sammeln, Sanity Checks)
+├── models/               # Gespeicherte Modelle (.pkl) und Features
+├── notebooks/            # Jupyter Notebooks für Visualisierung
+└── config/               # Riot API Konfiguration
 ```
 
 ## Setup
@@ -112,6 +113,11 @@ python src/models/train_neural_network.py
 python src/models/compare_models.py
 ```
 
+### Sanity Check (Pipeline-Validierung)
+```bash
+python scripts/sanity_check_synthetic_labels.py
+```
+
 ### Visualisierung (Jupyter Notebook)
 ```bash
 jupyter notebook notebooks/lol_champselect_eda_and_model_eval.ipynb
@@ -119,7 +125,7 @@ jupyter notebook notebooks/lol_champselect_eda_and_model_eval.ipynb
 
 ## V2 - BA-Experimente
 
-Der neue Stand fuer die Bachelorarbeit liegt unter `v2/`. Legacy-Code in `src/` und `scripts/` bleibt zur Referenz unveraendert (siehe `legacy/README.md`).
+Der neue Stand für die Bachelorarbeit liegt unter `v2/`. Legacy-Code in `src/` und `scripts/` bleibt zur Referenz unverändert (siehe `legacy/README.md`).
 
 ### Dataset bauen (High-Elo, Queue 420, mit Timeline-Diffs @ Min 7 / Min 15)
 
